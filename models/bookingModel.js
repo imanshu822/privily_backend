@@ -14,23 +14,34 @@ const bookingSchema = new mongoose.Schema(
     date: {
       type: Date,
       required: true,
+      unique: true,
     },
-    timeSlot: {
+    startTime: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    endTime: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    timeSlotNumber: {
       type: String,
       required: true,
     },
     status: {
       type: String,
-      enum: ["Pending", "Confirmed", "Cancelled"],
+      enum: ["Pending", "Confirmed", "Cancelled", "Completed", "Reted"],
       default: "Pending",
     },
-    total: {
-      type: Number,
-      required: true,
-    },
-    totalAfterDiscount: {
-      type: Number,
-    },
+    // totalCost: {
+    //   type: Number,
+    //   required: true,
+    // },
+    // totalAfterDiscountCost: {
+    //   type: Number,
+    // },
   },
   {
     timestamps: true,

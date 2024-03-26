@@ -202,7 +202,7 @@ const getallUser = asyncHandler(async (req, res) => {
     const getUsers = await User.find();
     res.json(getUsers);
   } catch (error) {
-    console.error(error); // Log the error for debugging purposes
+    console.error("Error fetching users:", error);
     res.status(500).json({
       status: "fail",
       message: "An error occurred while fetching users.",
@@ -362,18 +362,27 @@ const createBooking = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   validateMongoDbId(_id);
   try {
-    const { podId, date, timeSlot } = req.body;
+    const { podId, date, startTime, endTime, timeSlot } = req.body;
     const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const isoDate = new Date(date);
-    const total = req.body.total || 0;
+    const timeSlotNumber = timeSlot; // Assuming the time slot number is passed from the request
     const newBooking = await Booking.create({
       user: user._id,
       podId,
       date: isoDate,
-      timeSlot,
+      startTime,
+      endTime,
+      timeSlotNumber,
       status: "Pending",
-      total: total,
     });
+
+    // Push the newly created booking's _id to the booking array of the user
+    user.booking.push(newBooking._id);
+    await user.save();
 
     res
       .status(201)
@@ -417,6 +426,58 @@ const getBookingById = asyncHandler(async (req, res) => {
   }
 });
 
+// update booking by id
+const updateBookingById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
+  try {
+    const updatedBooking = await Booking.findByIdAndUpdate(id, req.body, {
+      new: true,
+    });
+    res.json(updatedBooking);
+  } catch (error) {
+    throw new Error(error);
+  }
+});
+
+// delete booking by id for user only if the booking status is pending and confirmed
+const cancelBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
+  try {
+    const booking = await Booking.findById(id);
+
+    // Check if booking exists
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Check if booking status is either pending or confirmed
+    if (booking.status !== "Pending" && booking.status !== "Confirmed") {
+      return res.status(403).json({
+        message:
+          "Cannot cancel booking with status other than Pending or Confirmed",
+      });
+    }
+
+    // Check if booking's start time is within the last 5 seconds
+    const fiveSecondsAgo = new Date(new Date() - 300 * 1000);
+    if (booking.startTime > fiveSecondsAgo) {
+      return res.status(403).json({
+        message: "Cannot cancel booking within 5 seconds of start time",
+      });
+    }
+
+    // If status is pending or confirmed, update status to "Cancelled"
+    booking.status = "Cancelled";
+    await booking.save();
+
+    res.json({ message: "Booking cancelled successfully", booking });
+  } catch (error) {
+    throw new Error(error);
+  }
+});
+
 // Update booking status as per the status provided by admin to manage booking status
 const updateBookingStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
@@ -429,6 +490,36 @@ const updateBookingStatus = asyncHandler(async (req, res) => {
       { new: true }
     );
     res.json(updatedBooking);
+  } catch (error) {
+    throw new Error(error);
+  }
+});
+
+// send notification after booking is created or updated
+const sendNotification = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  const status = req.booking.status;
+  validateMongoDbId(_id);
+  try {
+    const user = await User.findById(_id); // Fetch the user details
+    if (!user) throw new Error("User not found");
+
+    // Assuming you have a logic to determine if a booking is completed or not
+    // For example, let's check if any booking for this user has status "Completed"
+    const completedBookings = await Booking.find({
+      user: _id,
+      status: "Completed",
+    });
+
+    if (completedBookings.length > 0) {
+      console.log(
+        "Sending notification for completed bookings to user:",
+        user.email
+      );
+      res.json({ message: "Notification sent for completed bookings.", user });
+    } else {
+      res.json({ message: "No completed bookings found." });
+    }
   } catch (error) {
     throw new Error(error);
   }
@@ -453,8 +544,11 @@ module.exports = {
   // applyCoupon,
   createBooking,
   getBookings,
+  cancelBooking,
   getBookingsByUser,
   getBookingById,
+  updateBookingById,
   updateBookingStatus,
   setCurrentLocation,
+  sendNotification,
 };

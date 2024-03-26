@@ -35,7 +35,13 @@ var userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-
+    // notification
+    notification: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Notification",
+      },
+    ],
     address: {
       type: String,
     },
