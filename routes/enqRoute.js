@@ -6,7 +6,7 @@ const {
   getEnquiry,
   getallEnquiry,
 } = require("../controller/enqCtrl");
-const { authMiddleware, isAdmin } = require("../middlewares/authMIddleware");
+const { authMiddleware, isAdmin } = require("../middlew/authMIddleware");
 const router = express.Router();
 
 router.post("/", createEnquiry);

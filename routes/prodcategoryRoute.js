@@ -6,7 +6,7 @@ const {
   getCategory,
   getallCategory,
 } = require("../controller/prodcategoryCtrl");
-const { authMiddleware, isAdmin } = require("../middlewares/authMIddleware");
+const { authMiddleware, isAdmin } = require("../middlew/authMIddleware");
 const router = express.Router();
 
 router.post("/", authMiddleware, isAdmin, createCategory);
