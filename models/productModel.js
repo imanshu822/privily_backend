@@ -75,15 +75,11 @@ var productSchema = new mongoose.Schema(
     timeSlot: {
       type: String,
       required: true,
-      validate: {
-        validator: function (value) {
-          // Custom validation to ensure time slot format is correct
-          return /^(0[0-9]|1[0-1]):([0-5][0-9])\s(am|pm)\s+to\s+(0[0-9]|1[0-1]):([0-5][0-9])\s(am|pm)$/.test(
-            value
-          );
-        },
-        message: (props) => `${props.value} is not a valid time slot format.`,
-      },
+    },
+    isAvailable: {
+      type: Boolean,
+      required: true,
+      default: true,
     },
 
     features: [

@@ -10,6 +10,8 @@ const createProduct = asyncHandler(async (req, res) => {
     if (req.body.title) {
       req.body.slug = slugify(req.body.title);
     }
+
+    // console.log(req.body);
     const newProduct = await Product.create(req.body);
     res.json(newProduct);
   } catch (error) {
