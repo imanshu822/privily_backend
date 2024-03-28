@@ -201,7 +201,6 @@ const rating = asyncHandler(async (req, res) => {
 });
 
 // get all pod products address details in an array
-// get all pod products address details in an array
 const getAllProductAddress = asyncHandler(async (req, res) => {
   try {
     // Fetch all products

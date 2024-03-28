@@ -48,7 +48,7 @@ router.get("/all-users", getallUser);
 router.delete("/:id", authMiddleware, isAdmin, deleteaUser);
 router.put("/edit-user", authMiddleware, updatedUser);
 router.put("/save-address", authMiddleware, saveAddress);
-router.put("/current-location", setCurrentLocation);
+router.put("/current-location", authMiddleware, setCurrentLocation);
 
 router.put("/block-user/:id", authMiddleware, isAdmin, blockUser);
 router.put("/unblock-user/:id", authMiddleware, isAdmin, unblockUser);
