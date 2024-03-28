@@ -55,8 +55,8 @@ router.put("/unblock-user/:id", authMiddleware, isAdmin, unblockUser);
 // router.post("/apply-coupon", authMiddleware, applyCoupon);
 
 router.post("/create-booking/:podId", authMiddleware, createBooking);
-router.get("/all-bookings-by-user", authMiddleware, getBookingsByUser); // not working
-router.get("/all-bookings", authMiddleware, isAdmin, getBookings); // not working
+router.get("/all-bookingsByUser", authMiddleware, getBookingsByUser); // not working
+router.get("/all-bookings", authMiddleware, isAdmin, getBookings);
 
 router.get("/booking/:id", authMiddleware, getBookingById);
 router.put("/update-booking/:id", authMiddleware, updateBookingById);

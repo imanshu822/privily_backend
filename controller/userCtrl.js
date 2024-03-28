@@ -199,7 +199,8 @@ const setCurrentLocation = asyncHandler(async (req, res, next) => {
 // Get all users
 const getallUser = asyncHandler(async (req, res) => {
   try {
-    const getUsers = await User.find();
+    console.log("Get all users");
+    const getUsers = await User.find().populate("booking");
     res.json(getUsers);
   } catch (error) {
     res.status(500).json({
@@ -377,6 +378,7 @@ const createBooking = asyncHandler(async (req, res) => {
     if (bookingDateObj < currentDate) {
       return res.status(400).json({ message: "Booking date is in the past" });
     }
+
     // Convert startTime and endTime strings to Date objects
     const startDateTime = new Date(bookingDate + "T" + startTime + "Z");
     const endDateTime = new Date(bookingDate + "T" + endTime + "Z");
@@ -436,19 +438,12 @@ const createBooking = asyncHandler(async (req, res) => {
 
 // get all bookings for a user
 const getBookingsByUser = asyncHandler(async (req, res) => {
-  const { _id } = req.user;
-  validateMongoDbId(_id);
   try {
-    const bookings = await Booking.find({ user: _id })
-      .populate("podId") // Populate the podId field
-      .exec();
+    const bookings = await Booking.find();
+
     res.json(bookings);
   } catch (error) {
-    console.error("Error fetching bookings by user:", error); // Log the error for debugging
-    res.status(500).json({
-      status: "fail",
-      message: "An error occurred while fetching bookings by user.",
-    });
+    throw new Error(error);
   }
 });
 
