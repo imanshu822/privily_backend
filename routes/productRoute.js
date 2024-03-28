@@ -8,7 +8,7 @@ const {
   deleteProduct,
   rating,
 } = require("../controller/productCtrl");
-const { isAdmin, authMiddleware } = require("../middlewares/authMiddleware");
+const { isAdmin, authMiddleware } = require("../middlewares/authMIddleware");
 const router = express.Router();
 
 router.post("/create-pods", authMiddleware, isAdmin, createProduct);
