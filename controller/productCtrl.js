@@ -10,7 +10,6 @@ const createProduct = asyncHandler(async (req, res) => {
     if (req.body.title) {
       req.body.slug = slugify(req.body.title);
     }
-
     // console.log(req.body);
     const newProduct = await Product.create(req.body);
     res.json(newProduct);
@@ -25,30 +24,48 @@ const createProduct = asyncHandler(async (req, res) => {
 
 // update a pod details
 const updateProduct = asyncHandler(async (req, res) => {
-  const id = req.params;
+  const id = req.params.id; // Accessing the id from params correctly
   validateMongoDbId(id);
   try {
     if (req.body.title) {
       req.body.slug = slugify(req.body.title);
     }
-    const updateProduct = await Product.findOneAndUpdate({ id }, req.body, {
-      new: true,
-    });
-    res.json(updateProduct);
+    const updatedProduct = await Product.findOneAndUpdate(
+      { _id: id },
+      req.body,
+      {
+        new: true,
+        runValidators: true, // Ensure validators are run on update
+      }
+    );
+    if (!updatedProduct) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "Product not found" });
+    }
+    res.json(updatedProduct);
   } catch (error) {
-    throw new Error(error);
+    console.error(error); // Log the error for debugging purposes
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 });
 
-// delete a pod
+// delete a product
 const deleteProduct = asyncHandler(async (req, res) => {
-  const id = req.params;
+  const id = req.params.id; // Accessing the id from params correctly
+  console.log(id);
   validateMongoDbId(id);
   try {
-    const deleteProduct = await Product.findOneAndDelete(id);
+    const deleteProduct = await Product.findOneAndDelete({ _id: id }); // Correct usage of findOneAndDelete
+    if (!deleteProduct) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "Product not found" });
+    }
     res.json(deleteProduct);
   } catch (error) {
-    throw new Error(error);
+    console.error(error); // Log the error for debugging purposes
+    res.status(500).json({ status: "error", message: "Internal server error" });
   }
 });
 
@@ -184,9 +201,11 @@ const rating = asyncHandler(async (req, res) => {
 });
 
 // get all pod products address details in an array
+// get all pod products address details in an array
 const getAllProductAddress = asyncHandler(async (req, res) => {
   try {
     // Fetch all products
+    console.log("products");
     const products = await Product.find();
     const addresses = [];
     products.forEach((product) => {
