@@ -8,23 +8,25 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
     podId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+    },
+    bookingPurpose: {
       type: String,
       required: true,
     },
-    date: {
-      type: Date,
-      required: true,
-      unique: true,
+    bookingDate: {
+      type: String,
+      require: true,
     },
     startTime: {
-      type: String,
+      type: Date,
       required: true,
-      unique: true,
     },
     endTime: {
-      type: String,
+      type: Date,
       required: true,
-      unique: true,
     },
     timeSlotNumber: {
       type: String,
@@ -32,9 +34,21 @@ const bookingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Pending", "Confirmed", "Cancelled", "Completed", "Reted"],
+      enum: [
+        "Pending",
+        "Confirmed",
+        "Cancelled",
+        "Processing",
+        "Completed",
+        "Rated",
+      ],
       default: "Pending",
     },
+    isBookingActive: {
+      type: Boolean,
+      default: true,
+    },
+
     // totalCost: {
     //   type: Number,
     //   required: true,
@@ -47,5 +61,5 @@ const bookingSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
+// bookingSchema.index({ date: 1 }, { unique: true }); // Ensure unique bookings per date (optional)
 module.exports = mongoose.model("Booking", bookingSchema);

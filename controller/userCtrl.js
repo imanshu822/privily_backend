@@ -202,7 +202,6 @@ const getallUser = asyncHandler(async (req, res) => {
     const getUsers = await User.find();
     res.json(getUsers);
   } catch (error) {
-    console.error("Error fetching users:", error);
     res.status(500).json({
       status: "fail",
       message: "An error occurred while fetching users.",
@@ -306,13 +305,11 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
     const resetURL = `Hi, Please follow this link to reset Your Password. This link is valid till 10 minutes from now. <a href='http://localhost:5000/api/user/reset-password/${token}'>Click Here</>`;
     const data = {
       to: email,
-      text: "Hey User",
       subject: "Forgot Password Link",
-      htm: resetURL,
+      html: resetURL,
     };
-    sendEmail(data);
+    sendEmail(data.to, data.subject, data.html);
     res.json({ message: "Email sent successfully", token: token });
-    // res.json(token);
   } catch (error) {
     throw new Error(error);
   }
@@ -357,30 +354,69 @@ const resetPassword = asyncHandler(async (req, res) => {
 //   res.json({ totalAfterDiscount });
 // });
 
-// Create a booking for a user with podId, date, timeSlot and status as pending by default
+// _______________________________________________________________________________________________
+
+// Create a booking for a user with podId, timeSlot and status as pending by default
 const createBooking = asyncHandler(async (req, res) => {
   const { _id } = req.user;
+  const { podId } = req.params;
   validateMongoDbId(_id);
+  validateMongoDbId(podId);
   try {
-    const { podId, date, startTime, endTime, timeSlot } = req.body;
+    const { bookingDate, startTime, endTime, timeSlotNumber, bookingPurpose } =
+      req.body;
+
     const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const isoDate = new Date(date);
-    const timeSlotNumber = timeSlot; // Assuming the time slot number is passed from the request
+    // Convert startTime and endTime strings to Date objects
+    const startDateTime = new Date(bookingDate + "T" + startTime + "Z");
+    const endDateTime = new Date(bookingDate + "T" + endTime + "Z");
+
+    // Check for overlapping bookings
+    const existingBooking = await Booking.findOne({
+      podId,
+      $or: [
+        {
+          $and: [
+            { startTime: { $lte: startDateTime } },
+            { endTime: { $gte: startDateTime } },
+          ],
+        }, // Check if new booking starts during existing booking
+        {
+          $and: [
+            { startTime: { $lte: endDateTime } },
+            { endTime: { $gte: endDateTime } },
+          ],
+        }, // Check if new booking ends during existing booking
+        {
+          $and: [
+            { startTime: { $gte: startDateTime } },
+            { endTime: { $lte: endDateTime } },
+          ],
+        }, // Check if new booking is completely within existing booking
+      ],
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({
+        message: "Booking with the same date and time already exists",
+      });
+    }
+
     const newBooking = await Booking.create({
       user: user._id,
       podId,
-      date: isoDate,
-      startTime,
-      endTime,
+      bookingDate,
+      startTime: startDateTime,
+      endTime: endDateTime,
       timeSlotNumber,
+      bookingPurpose,
       status: "Pending",
     });
 
-    // Push the newly created booking's _id to the booking array of the user
     user.booking.push(newBooking._id);
     await user.save();
 
@@ -397,17 +433,23 @@ const getBookingsByUser = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   validateMongoDbId(_id);
   try {
-    const bookings = await Booking.find({ user: _id }).populate("user").exec();
+    const bookings = await Booking.find({ user: _id })
+      .populate("podId") // Populate the podId field
+      .exec();
     res.json(bookings);
   } catch (error) {
-    throw new Error(error);
+    console.error("Error fetching bookings by user:", error); // Log the error for debugging
+    res.status(500).json({
+      status: "fail",
+      message: "An error occurred while fetching bookings by user.",
+    });
   }
 });
 
 // Get all bookings for admin to manage and update status of booking as per the status
 const getBookings = asyncHandler(async (req, res) => {
   try {
-    const allBookings = await Booking.find().populate("user").exec();
+    const allBookings = await Booking.find();
     res.json(allBookings);
   } catch (error) {
     throw new Error(error);
@@ -440,36 +482,37 @@ const updateBookingById = asyncHandler(async (req, res) => {
   }
 });
 
-// delete booking by id for user only if the booking status is pending and confirmed
+// cancle booking by id for user only if the booking status is pending and confirmed
 const cancelBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
   validateMongoDbId(id);
   try {
     const booking = await Booking.findById(id);
 
-    // Check if booking exists
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Check if booking status is either pending or confirmed
     if (booking.status !== "Pending" && booking.status !== "Confirmed") {
       return res.status(403).json({
         message:
           "Cannot cancel booking with status other than Pending or Confirmed",
       });
     }
-
-    // Check if booking's start time is within the last 5 seconds
-    const fiveSecondsAgo = new Date(new Date() - 300 * 1000);
-    if (booking.startTime > fiveSecondsAgo) {
+    const StartTime = new Date(booking.startTime);
+    // console.log("Start Time:", StartTime);
+    // console.log("Now", new Date());
+    // Check if booking's start time is within the last 5 minutes
+    const fiveMinutesAgo = new Date(new Date() - 300 * 1000);
+    if (booking.startTime > fiveMinutesAgo) {
       return res.status(403).json({
-        message: "Cannot cancel booking within 5 seconds of start time",
+        message: "Cannot cancel booking within 5 Minutes of start time",
       });
     }
 
     // If status is pending or confirmed, update status to "Cancelled"
     booking.status = "Cancelled";
+    booking.isBookingActive = false;
     await booking.save();
 
     res.json({ message: "Booking cancelled successfully", booking });
@@ -478,8 +521,100 @@ const cancelBooking = asyncHandler(async (req, res) => {
   }
 });
 
+//update booking auromatically when current time is equal to or greater than booking start time
+const updateBookingStatusAutomatically = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  validateMongoDbId(_id);
+
+  try {
+    const now = new Date();
+
+    console.log("Now:", now.getHours(), now.getMinutes(), now.getSeconds());
+
+    // Find pending bookings
+    const pendingBookoing = await Booking.find({
+      user: _id,
+    })
+      .populate("user")
+      .exec();
+
+    // Update completed bookings status to "Completed"
+    const updatedCompletedBookings = await Promise.all(
+      pendingBookoing.map(async (booking) => {
+        if (
+          booking.startTime.getDate() <= now.getDate() &&
+          booking.endTime <= now
+        ) {
+          booking.status = "Completed";
+          return await booking.save();
+        } else if (
+          booking.startTime.getDate() == now.getDate() &&
+          booking.startTime <= now &&
+          booking.endTime >= now
+        ) {
+          booking.status = "Processing";
+          return await booking.save();
+        }
+      })
+    );
+
+    // Send the response
+    // res.json(pendingBookoing);
+    res.json({ message: "Booking status updated successfully" });
+  } catch (error) {
+    console.error("Error updating booking status:", error);
+    res.status(500).json({ message: "Failed to update booking status" });
+  }
+});
+
+// rating a booking after completion of booking by user if status is Completed
+const rateBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
+  try {
+    const booking = await Booking.findById(id)
+      .populate("user")
+      .populate("podId")
+      .exec();
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+    if (booking.status !== "Completed") {
+      return res
+        .status(400)
+        .json({ message: "Booking must be completed to rate it." });
+    } else if (booking.isBookingActive === false) {
+      return res.status(400).json({ message: "Booking is already rated." });
+    }
+    const { rating, comments } = req.body;
+    const newRating = {
+      star: rating,
+      comment: comments,
+      postedby: booking.user._id,
+    };
+    booking.podId.ratings.push(newRating);
+
+    let totalRating = 0;
+    booking.podId.ratings.forEach((rating) => {
+      totalRating += rating.star;
+    });
+    booking.podId.ratingCount = booking.podId.ratings.length;
+    booking.podId.totalRating = totalRating / booking.podId.ratingCount;
+
+    booking.rating = newRating;
+    booking.isBookingActive = false;
+
+    await booking.save();
+
+    res.json(booking);
+  } catch (error) {
+    throw new Error(error);
+  }
+});
+
 // Update booking status as per the status provided by admin to manage booking status
-const updateBookingStatus = asyncHandler(async (req, res) => {
+const updateBookingStatusByAdmin = asyncHandler(async (req, res) => {
   const { status } = req.body;
   const { id } = req.params;
   validateMongoDbId(id);
@@ -498,30 +633,50 @@ const updateBookingStatus = asyncHandler(async (req, res) => {
 // send notification after booking is created or updated
 const sendNotification = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  const status = req.booking.status;
   validateMongoDbId(_id);
+
   try {
-    const user = await User.findById(_id); // Fetch the user details
+    const user = await User.findById(_id).exec();
     if (!user) throw new Error("User not found");
 
-    // Assuming you have a logic to determine if a booking is completed or not
-    // For example, let's check if any booking for this user has status "Completed"
-    const completedBookings = await Booking.find({
-      user: _id,
-      status: "Completed",
-    });
+    const bookings = await Booking.find({ user: _id }).exec();
 
-    if (completedBookings.length > 0) {
-      console.log(
-        "Sending notification for completed bookings to user:",
-        user.email
-      );
-      res.json({ message: "Notification sent for completed bookings.", user });
-    } else {
-      res.json({ message: "No completed bookings found." });
+    for (const booking of bookings) {
+      let emailContent = "";
+
+      // If booking status has changed, send notification
+      if (booking.status !== user.lastBookingStatus) {
+        emailContent = `Hi ${user.firstname},\n\nYour booking with ID ${booking._id} has been updated to ${booking.status}.`;
+        user.lastBookingStatus = booking.status; // Update user's last booking status
+      }
+
+      // If a new booking has been created, send booking details
+      if (booking.status === "Pending" && !booking.isNotificationSent) {
+        emailContent = `Hi ${user.firstname},\n\nThank you for choosing Privily! 
+        You have successfully created a booking with us.
+         Your booking details are as follows:\n\nStart Time: ${booking.startTime}\n
+         End Time: ${booking.endTime}\nBooking Purpose: ${booking.bookingPurpose}`;
+        booking.isNotificationSent = true; // Mark booking as notification sent
+      }
+
+      // If email content exists, send email
+      if (emailContent) {
+        const data = {
+          to: user.email,
+          subject: "Booking Notification",
+          html: emailContent,
+        };
+        await sendEmail(data.to, data.subject, data.html); // Send email
+        await booking.save(); // Save changes to booking
+      }
     }
+
+    await user.save(); // Save changes to user
+    res.json({ message: "Notification sent successfully" });
   } catch (error) {
-    throw new Error(error);
+    res
+      .status(500)
+      .json({ message: "Error sending notification: " + error.message });
   }
 });
 
@@ -548,7 +703,9 @@ module.exports = {
   getBookingsByUser,
   getBookingById,
   updateBookingById,
-  updateBookingStatus,
+  updateBookingStatusAutomatically,
+  updateBookingStatusByAdmin,
   setCurrentLocation,
   sendNotification,
+  rateBooking,
 };

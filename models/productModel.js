@@ -3,6 +3,10 @@ const mongoose = require("mongoose"); // Erase if already required
 // Declare the Schema of the Mongo model
 var productSchema = new mongoose.Schema(
   {
+    productId: {
+      type: String,
+      required: true,
+    },
     title: {
       type: String,
       required: true,
@@ -111,8 +115,11 @@ var productSchema = new mongoose.Schema(
         postedby: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       },
     ],
-
-    totalrating: {
+    ratingCount: {
+      type: Number,
+      default: 0,
+    },
+    totalRating: {
       type: String,
       default: 0,
     },

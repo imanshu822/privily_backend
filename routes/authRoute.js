@@ -22,9 +22,11 @@ const {
   getBookingById,
   cancelBooking,
   updateBookingById,
-  updateBookingStatus,
+  updateBookingStatusAutomatically,
+  updateBookingStatusByAdmin,
   setCurrentLocation,
   sendNotification,
+  rateBooking,
 } = require("../controller/userCtrl");
 
 const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware");
@@ -46,20 +48,34 @@ router.get("/all-users", getallUser);
 router.delete("/:id", authMiddleware, isAdmin, deleteaUser);
 router.put("/edit-user", authMiddleware, updatedUser);
 router.put("/save-address", authMiddleware, saveAddress);
+router.put("/current-location", setCurrentLocation);
 
 router.put("/block-user/:id", authMiddleware, isAdmin, blockUser);
 router.put("/unblock-user/:id", authMiddleware, isAdmin, unblockUser);
-
 // router.post("/apply-coupon", authMiddleware, applyCoupon);
 
-router.post("/create-booking", authMiddleware, createBooking);
-router.get("/bookings", authMiddleware, getBookings);
-router.get("/bookings-by-user", authMiddleware, getBookingsByUser);
+router.post("/create-booking/:podId", authMiddleware, createBooking);
+router.get("/all-bookings-by-user", authMiddleware, getBookingsByUser); // not working
+router.get("/all-bookings", authMiddleware, isAdmin, getBookings); // not working
+
 router.get("/booking/:id", authMiddleware, getBookingById);
-router.put("/cancle-booking/:id", authMiddleware, cancelBooking);
 router.put("/update-booking/:id", authMiddleware, updateBookingById);
-router.put("/booking-status/:id", authMiddleware, isAdmin, updateBookingStatus);
-router.put("/current-location", setCurrentLocation);
+router.put("/cancle-booking/:id", authMiddleware, cancelBooking);
+
+router.put(
+  "/auto-update-booking-status",
+  authMiddleware,
+  updateBookingStatusAutomatically
+);
+
+router.put(
+  "/booking-status/:id",
+  authMiddleware,
+  isAdmin,
+  updateBookingStatusByAdmin
+);
+
+router.post("/rate-booking/:id", authMiddleware, rateBooking);
 
 router.put("/notification", authMiddleware, sendNotification);
 
