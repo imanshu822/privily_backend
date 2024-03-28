@@ -29,7 +29,7 @@ const {
   rateBooking,
 } = require("../controller/userCtrl");
 
-const { authMiddleware, isAdmin } = require("../middlewares/authMiddleware.js");
+const { authMiddleware, isAdmin } = require("../middlew/authMiddleware");
 
 const router = express.Router();
 
