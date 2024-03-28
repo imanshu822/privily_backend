@@ -371,6 +371,12 @@ const createBooking = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    //check bookingDate is not past date
+    const bookingDateObj = new Date(bookingDate);
+    const currentDate = new Date();
+    if (bookingDateObj < currentDate) {
+      return res.status(400).json({ message: "Booking date is in the past" });
+    }
     // Convert startTime and endTime strings to Date objects
     const startDateTime = new Date(bookingDate + "T" + startTime + "Z");
     const endDateTime = new Date(bookingDate + "T" + endTime + "Z");
