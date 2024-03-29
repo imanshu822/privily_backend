@@ -539,11 +539,74 @@ const updateBookingById = asyncHandler(async (req, res) => {
       new: true,
     });
     res.json(updatedBooking);
+    sendNotificationOnUpdate(
+      req.user._id, // Assuming req.user contains user information
+      updatedBooking._id,
+      Object.keys(req.body) // Pass updated fields to sendNotificationOnUpdate
+    );
   } catch (error) {
     throw new Error(error);
   }
 });
+const sendNotificationOnUpdate = asyncHandler(
+  async (userId, bookingId, updatedFields) => {
+    validateMongoDbId(userId);
+    validateMongoDbId(bookingId);
 
+    try {
+      const user = await User.findById(userId);
+      if (!user) throw new Error("User not found");
+
+      const booking = await Booking.findById(bookingId);
+      if (!booking) throw new Error("Booking not found");
+
+      let emailContent = "";
+
+      // Check if relevant fields are updated
+      if (updatedFields && updatedFields.length > 0) {
+        const relevantFields = updatedFields.filter((field) => {
+          // Add conditions here based on user preferences and booking fields
+          return (
+            field === "status" ||
+            field === "bookingDate" ||
+            field === "startTime" ||
+            field === "endTime"
+          );
+        });
+
+        if (relevantFields.length > 0) {
+          // Construct notification message based on updated fields
+          emailContent = `
+          <p>Hi ${user.firstname},</p>
+          <p>Your booking details have been updated. Here are the changes:</p>
+          <ul>
+            ${relevantFields
+              .map(
+                (field) =>
+                  `<li><strong>${field}:</strong> ${booking[field]}</li>`
+              )
+              .join("\n")}
+          </ul>
+          <p>If you have any questions or concerns, please feel free to contact us.</p>
+        `;
+        }
+      }
+
+      // If email content exists, send email
+      if (emailContent) {
+        const data = {
+          to: user.email,
+          subject: "Booking Update Notification",
+          html: emailContent,
+        };
+        await sendEmail(data.to, data.subject, data.html); // Send email
+      }
+    } catch (error) {
+      console.error("Error sending update notification:", error.message);
+      throw new Error("Failed to send update notification");
+    }
+  }
+);
 // cancle booking by id for user only if the booking status is pending and confirmed
 const cancelBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -580,7 +643,6 @@ const cancelBooking = asyncHandler(async (req, res) => {
     throw new Error(error);
   }
 });
-
 const sendNotificationOnCancel = asyncHandler(async (userId, bookingId) => {
   validateMongoDbId(userId);
   validateMongoDbId(bookingId);
@@ -595,7 +657,29 @@ const sendNotificationOnCancel = asyncHandler(async (userId, bookingId) => {
 
     // If booking status has changed, send notification
     if (booking.status == "Cancelled") {
-      emailContent = `Hi ${user.firstname},\n\nYour booking with ID ${booking._id} has been cancelled.`;
+      // Format booking date and times
+      const formattedBookingDate = booking.bookingDate.toDateString();
+      const formattedStartTime = booking.startTime.toLocaleTimeString("en-US", {
+        hour12: true,
+      });
+      const formattedEndTime = booking.endTime.toLocaleTimeString("en-US", {
+        hour12: true,
+      });
+
+      emailContent = `
+        <p>Hi ${user.firstname},</p>
+        <p>We regret to inform you that your booking has been cancelled.</p>
+        <p>Here are the details of your booking:</p>
+        <ul>
+          <li><strong>Booking ID:</strong> ${booking._id}</li>
+          <li><strong>Booking Date:</strong> ${formattedBookingDate}</li>
+          <li><strong>Start Time:</strong> ${formattedStartTime}</li>
+          <li><strong>End Time:</strong> ${formattedEndTime}</li>
+          <li><strong>Pod ID:</strong> ${booking.podId}</li> <!-- Assuming 'podId' is the property for pod ID -->
+          <!-- Include other necessary details -->
+        </ul>
+        <p>We apologize for any inconvenience caused.</p>
+      `;
       user.lastBookingStatus = booking.status; // Update user's last booking status
     }
 
@@ -603,7 +687,7 @@ const sendNotificationOnCancel = asyncHandler(async (userId, bookingId) => {
     if (emailContent) {
       const data = {
         to: user.email,
-        subject: "Booking Notification",
+        subject: "Booking Cancellation Notification",
         html: emailContent,
       };
       await sendEmail(data.to, data.subject, data.html); // Send email
@@ -612,10 +696,11 @@ const sendNotificationOnCancel = asyncHandler(async (userId, bookingId) => {
 
     await user.save(); // Save changes to user
   } catch (error) {
-    console.error("Error sending notification:", error.message);
-    throw new Error("Failed to send notification");
+    console.error("Error sending cancellation notification:", error.message);
+    throw new Error("Failed to send cancellation notification");
   }
 });
+
 //update booking auromatically when current time is equal to or greater than booking start time
 const updateBookingStatusAutomatically = asyncHandler(async (req, res) => {
   const { _id } = req.user;
@@ -729,7 +814,6 @@ const updateBookingStatusByAdmin = asyncHandler(async (req, res) => {
   }
 });
 
-// send notification after booking is created or updated
 const sendNotification = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   validateMongoDbId(_id);
