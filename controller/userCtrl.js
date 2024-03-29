@@ -428,6 +428,7 @@ const createBooking = asyncHandler(async (req, res) => {
 
     user.booking.push(newBooking._id);
     await user.save();
+    sendNotificationOnBooking(user._id, newBooking._id);
 
     res
       .status(201)
@@ -438,14 +439,65 @@ const createBooking = asyncHandler(async (req, res) => {
   }
 });
 
+const sendNotificationOnBooking = asyncHandler(async (userId, bookingId) => {
+  validateMongoDbId(userId);
+  validateMongoDbId(bookingId);
+  try {
+    const user = await User.findById(userId);
+    if (!user) throw new Error("User not found");
+
+    const booking = await Booking.findById(bookingId).populate("podId");
+    if (!booking) throw new Error("Booking not found");
+
+    // Format booking date and times
+    const formattedBookingDate = booking.bookingDate.toDateString();
+    const formattedStartTime = booking.startTime.toLocaleTimeString("en-US", {
+      hour12: true,
+    });
+    const formattedEndTime = booking.endTime.toLocaleTimeString("en-US", {
+      hour12: true,
+    });
+
+    // Construct email content
+    const emailContent = `
+      <p>Hi ${user.firstname},</p>
+      <p>Your booking details:</p>
+      <ul>
+        <li><strong>Booking ID:</strong> ${booking._id}</li>
+        <li><strong>Booking Date:</strong> ${formattedBookingDate}</li>
+        <li><strong>Start Time:</strong> ${formattedStartTime}</li>
+        <li><strong>End Time:</strong> ${formattedEndTime}</li>
+        <li><strong>Pod ID:</strong> ${booking.podId.name}</li> <!-- Assuming 'name' is the property for pod name -->
+        <!-- Include other necessary details -->
+      </ul>
+      <p>Thank you for booking with us!</p>
+    `;
+
+    // Send email
+    const data = {
+      to: user.email,
+      subject: "Booking Notification",
+      html: emailContent,
+    };
+    await sendEmail(data.to, data.subject, data.html);
+
+    console.log("Email sent successfully."); // Log success
+  } catch (error) {
+    console.error("Error sending notification:", error.message);
+    throw new Error("Failed to send notification");
+  }
+});
+
 // get all bookings for a user
 const getBookingsByUser = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   validateMongoDbId(_id);
   try {
-    const bookings = await Booking.find({ user: _id })
-      .populate("podId") // Populate the podId field
-      .exec();
+    const user = await User.findById(_id).populate("booking");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const bookings = user.booking;
     res.json(bookings);
   } catch (error) {
     console.error("Error fetching bookings by user:", error); // Log the error for debugging
@@ -502,26 +554,24 @@ const cancelBooking = asyncHandler(async (req, res) => {
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-
     if (booking.status !== "Pending" && booking.status !== "Confirmed") {
       return res.status(403).json({
         message:
           "Cannot cancel booking with status other than Pending or Confirmed",
       });
     }
-    const StartTime = new Date(booking.startTime);
-    // console.log("Start Time:", StartTime);
-    // console.log("Now", new Date());
     // Check if booking's start time is within the last 5 minutes
     const fiveMinutesAgo = new Date(new Date() - 300 * 1000);
-    if (booking.startTime > fiveMinutesAgo) {
+
+    if (booking.startTime < fiveMinutesAgo) {
       return res.status(403).json({
-        message: "Cannot cancel booking within 5 Minutes of start time",
+        message: "Cannot cancel booking Before 5 Minutes of start time",
       });
     }
 
     // If status is pending or confirmed, update status to "Cancelled"
     booking.status = "Cancelled";
+    sendNotificationOnCancel(booking.user._id, booking._id);
     booking.isBookingActive = false;
     await booking.save();
 
@@ -531,6 +581,41 @@ const cancelBooking = asyncHandler(async (req, res) => {
   }
 });
 
+const sendNotificationOnCancel = asyncHandler(async (userId, bookingId) => {
+  validateMongoDbId(userId);
+  validateMongoDbId(bookingId);
+  try {
+    const user = await User.findById(userId);
+    if (!user) throw new Error("User not found");
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) throw new Error("Booking not found");
+
+    let emailContent = "";
+
+    // If booking status has changed, send notification
+    if (booking.status == "Cancelled") {
+      emailContent = `Hi ${user.firstname},\n\nYour booking with ID ${booking._id} has been cancelled.`;
+      user.lastBookingStatus = booking.status; // Update user's last booking status
+    }
+
+    // If email content exists, send email
+    if (emailContent) {
+      const data = {
+        to: user.email,
+        subject: "Booking Notification",
+        html: emailContent,
+      };
+      await sendEmail(data.to, data.subject, data.html); // Send email
+      await booking.save(); // Save changes to booking
+    }
+
+    await user.save(); // Save changes to user
+  } catch (error) {
+    console.error("Error sending notification:", error.message);
+    throw new Error("Failed to send notification");
+  }
+});
 //update booking auromatically when current time is equal to or greater than booking start time
 const updateBookingStatusAutomatically = asyncHandler(async (req, res) => {
   const { _id } = req.user;
@@ -615,6 +700,7 @@ const rateBooking = asyncHandler(async (req, res) => {
     booking.podId.totalRating = totalRating / booking.podId.ratingCount;
 
     booking.rating = newRating;
+    sendNotification();
     booking.status = "Rated";
     booking.isBookingActive = false;
 
