@@ -17,7 +17,7 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
     bookingDate: {
-      type: String,
+      type: Date,
       require: true,
     },
     startTime: {

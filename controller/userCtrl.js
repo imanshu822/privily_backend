@@ -199,8 +199,7 @@ const setCurrentLocation = asyncHandler(async (req, res, next) => {
 // Get all users
 const getallUser = asyncHandler(async (req, res) => {
   try {
-    console.log("Get all users");
-    const getUsers = await User.find().populate("booking");
+    const getUsers = await User.find();
     res.json(getUsers);
   } catch (error) {
     res.status(500).json({
@@ -372,16 +371,18 @@ const createBooking = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    //check bookingDate is not past date
+    // Convert bookingDate, startTime, and endTime to Date objects
     const bookingDateObj = new Date(bookingDate);
-    const currentDate = new Date();
-    if (bookingDateObj < currentDate) {
-      return res.status(400).json({ message: "Booking date is in the past" });
-    }
+    const startTimeObj = new Date(startTime);
+    const endTimeObj = new Date(endTime);
 
-    // Convert startTime and endTime strings to Date objects
-    const startDateTime = new Date(bookingDate + "T" + startTime + "Z");
-    const endDateTime = new Date(bookingDate + "T" + endTime + "Z");
+    // Convert to IST (add 5 hours and 30 minutes)
+    // bookingDateObj.setHours(bookingDateObj.getHours() + 5);
+    // bookingDateObj.setMinutes(bookingDateObj.getMinutes() + 30);
+    startTimeObj.setHours(startTimeObj.getHours() - 5);
+    startTimeObj.setMinutes(startTimeObj.getMinutes() - 30);
+    endTimeObj.setHours(endTimeObj.getHours() - 5);
+    endTimeObj.setMinutes(endTimeObj.getMinutes() - 30);
 
     // Check for overlapping bookings
     const existingBooking = await Booking.findOne({
@@ -389,20 +390,20 @@ const createBooking = asyncHandler(async (req, res) => {
       $or: [
         {
           $and: [
-            { startTime: { $lte: startDateTime } },
-            { endTime: { $gte: startDateTime } },
+            { startTime: { $lte: startTimeObj } },
+            { endTime: { $gte: endTimeObj } },
           ],
         }, // Check if new booking starts during existing booking
         {
           $and: [
-            { startTime: { $lte: endDateTime } },
-            { endTime: { $gte: endDateTime } },
+            { startTime: { $lte: endTimeObj } },
+            { endTime: { $gte: endTimeObj } },
           ],
         }, // Check if new booking ends during existing booking
         {
           $and: [
-            { startTime: { $gte: startDateTime } },
-            { endTime: { $lte: endDateTime } },
+            { startTime: { $gte: startTimeObj } },
+            { endTime: { $lte: endTimeObj } },
           ],
         }, // Check if new booking is completely within existing booking
       ],
@@ -417,9 +418,9 @@ const createBooking = asyncHandler(async (req, res) => {
     const newBooking = await Booking.create({
       user: user._id,
       podId,
-      bookingDate,
-      startTime: startDateTime,
-      endTime: endDateTime,
+      bookingDate: bookingDateObj,
+      startTime: startTimeObj,
+      endTime: endTimeObj,
       timeSlotNumber,
       bookingPurpose,
       status: "Pending",
@@ -432,18 +433,26 @@ const createBooking = asyncHandler(async (req, res) => {
       .status(201)
       .json({ message: "Booking created successfully", booking: newBooking });
   } catch (error) {
-    throw new Error(error);
+    console.error(error); // Log the error for debugging purposes
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
 // get all bookings for a user
 const getBookingsByUser = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  validateMongoDbId(_id);
   try {
-    const bookings = await Booking.find();
-
+    const bookings = await Booking.find({ user: _id })
+      .populate("podId") // Populate the podId field
+      .exec();
     res.json(bookings);
   } catch (error) {
-    throw new Error(error);
+    console.error("Error fetching bookings by user:", error); // Log the error for debugging
+    res.status(500).json({
+      status: "fail",
+      message: "An error occurred while fetching bookings by user.",
+    });
   }
 });
 
@@ -530,38 +539,40 @@ const updateBookingStatusAutomatically = asyncHandler(async (req, res) => {
   try {
     const now = new Date();
 
-    console.log("Now:", now.getHours(), now.getMinutes(), now.getSeconds());
+    console.log("Current Time:", now);
 
     // Find pending bookings
-    const pendingBookoing = await Booking.find({
+    const pendingBookings = await Booking.find({
       user: _id,
-    })
-      .populate("user")
-      .exec();
+      isBookingActive: true,
+      status: { $in: ["Pending", "Processing"], $nin: ["Rated", "Cancelled"] }, // Use $nin operator to exclude multiple statuses
+      endTime: { $lte: now }, // Find bookings where endTime is less than or equal to now
+    }).populate("user");
 
+    // console.log("Pending Bookings:", pendingBookings);
     // Update completed bookings status to "Completed"
     const updatedCompletedBookings = await Promise.all(
-      pendingBookoing.map(async (booking) => {
-        if (
-          booking.startTime.getDate() <= now.getDate() &&
-          booking.endTime <= now
-        ) {
+      pendingBookings.map(async (booking) => {
+        console.log(booking.startTime);
+        console.log(booking.endTime);
+
+        if (booking.endTime <= now) {
+          // Use endTime directly for comparison
           booking.status = "Completed";
-          return await booking.save();
-        } else if (
-          booking.startTime.getDate() == now.getDate() &&
-          booking.startTime <= now &&
-          booking.endTime >= now
-        ) {
-          booking.status = "Processing";
-          return await booking.save();
         }
+        if (booking.startTime <= now && now <= booking.endTime) {
+          // Check if now is within booking's start and end time
+          booking.status = "Processing";
+        }
+        return await booking.save();
       })
     );
 
     // Send the response
-    // res.json(pendingBookoing);
-    res.json({ message: "Booking status updated successfully" });
+    res.json({
+      message: "Booking status updated successfully",
+      updatedCompletedBookings,
+    });
   } catch (error) {
     console.error("Error updating booking status:", error);
     res.status(500).json({ message: "Failed to update booking status" });
@@ -604,6 +615,7 @@ const rateBooking = asyncHandler(async (req, res) => {
     booking.podId.totalRating = totalRating / booking.podId.ratingCount;
 
     booking.rating = newRating;
+    booking.status = "Rated";
     booking.isBookingActive = false;
 
     await booking.save();
